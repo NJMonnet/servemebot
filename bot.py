@@ -36,7 +36,7 @@ async def on_ready():
     activity = discord.Activity(
         type=discord.ActivityType.playing,  # Type "Playing"
         name="Team Fortress 2",  # Nom de l'application (optionnel, pour contexte)
-        state="Playing 6s",  # État (bas de la Rich Presence)
+        state="Playing 6s on serveme.tf",  # État (bas de la Rich Presence)
         details="Competitive",  # Détails (haut de la Rich Presence)
         assets={
             "large_image": "icon",  # Image principale
@@ -64,7 +64,7 @@ async def on_command_error(ctx, error):
     elif isinstance(error, commands.MissingRequiredArgument):
         # Gérer les arguments manquants
         if ctx.command.name == "reserve":
-            await ctx.send("Erreur : il manque l'heure de début. Utilisez `!reserve <heure>` (ex: `!reserve 20h00`).")
+            await ctx.send("Erreur : il manque l'heure de début. Utilisez `!reserve <heure>` (ex: `!reserve 20h00`) ou `!reserve <date> <heure>` (ex: `!reserve 2025-05-05 20h00`).")
         elif ctx.command.name == "confirm":
             await ctx.send("Erreur : il manque des arguments. Utilisez `!confirm <server_id> <password>` (ex: `!confirm 12345 mypassword`).")
         else:
@@ -92,17 +92,17 @@ async def help_command(ctx):
     """
     help_text = (
         "**Aide pour les commandes du bot :**\n\n"
-        "**!reserve <heure>**\n"
-        "- Réserve un serveur à partir de l'heure indiquée (format HHhMM, ex: 20h00) pour aujourd'hui à Paris.\n"
+        "**!reserve [<date>] <heure>**\n"
         "- Durée par défaut : 2 heures.\n"
-        "- Exemple : `!reserve 20h00`\n\n"
+        "- Exemples : `!reserve 20h00` (aujourd'hui ou demain si l'heure est passée)\n"
+        "             `!reserve 2025-05-05 20h00` (date spécifique)\n\n"
         "**!showmore**\n"
         "- Affiche la liste complète des serveurs disponibles après une réservation.\n"
         "- Exemple : `!showmore`\n\n"
         "**!confirm <server_id> <password>**\n"
         "- Confirme une réservation avec l'ID du serveur et un mot de passe.\n"
         "- Le RCON est demandé en message privé si non fourni.\n"
-        "- Fournit les détails de connexion (connect) dans le canal et RCON (rcon_address) en message privé.\n"
+        "- Fournit les détails de connexion dans le canal et RCON en message privé.\n"
         "- Exemple : `!confirm 12345 mypassword`\n\n"
         "**!end**\n"
         "- Termine une réservation active.\n"
@@ -115,19 +115,32 @@ async def help_command(ctx):
     await ctx.send(help_text)
 
 @bot.command(name="reserve")
-async def reserve(ctx, start_time: str = None):
+async def reserve(ctx, *, args: str = None):
     """
     Réserve un serveur pour une période donnée.
-    Format de l'heure : HHhMM (ex: 20h00) pour aujourd'hui à Paris.
-    Exemple : !reserve 20h00
+    Format : !reserve [<date>] <heure>
+    - <heure> : HHhMM (ex: 20h00)
+    - <date> (optionnel) : YYYY-MM-DD (ex: 2025-05-05)
+    Exemples : !reserve 20h00
+               !reserve 2025-05-05 20h00
     """
-    if not start_time:
-        await ctx.send("Erreur : veuillez fournir une heure de début.\nExemple : `!reserve 20h00`")
+    if not args:
+        await ctx.send("Erreur : veuillez fournir une heure de début.\nExemple : `!reserve 20h00` ou `!reserve 2025-05-05 20h00`")
         return
 
-    # Parse start_time (HHhMM format)
+    # Split arguments to check for date and time
+    parts = args.split()
+    date_str = None
+    time_str = parts[-1]  # Last part is always the time
+
+    if len(parts) > 1:
+        # Check if the first part looks like a date (YYYY-MM-DD)
+        if re.match(r"\d{4}-\d{2}-\d{2}", parts[0]):
+            date_str = parts[0]
+
+    # Parse time (HHhMM format)
     try:
-        time_obj = datetime.strptime(start_time, "%Hh%M")
+        time_obj = datetime.strptime(time_str, "%Hh%M")
     except ValueError:
         await ctx.send("Erreur : format d'heure invalide. Utilise HHhMM, ex: `20h00`.")
         return
@@ -136,12 +149,22 @@ async def reserve(ctx, start_time: str = None):
     paris_tz = pytz.timezone("Europe/Paris")
     now = datetime.now(paris_tz)
 
-    # Set start_time to today at the specified hour/minute
-    start_dt = now.replace(hour=time_obj.hour, minute=time_obj.minute, second=0, microsecond=0)
-
-    # If time is in the past, assume it's for the next day
-    if start_dt < now:
-        start_dt += timedelta(days=1)
+    # Parse date if provided, otherwise use current date
+    if date_str:
+        try:
+            date_obj = datetime.strptime(date_str, "%Y-%m-%D")
+            start_dt = date_obj.replace(
+                hour=time_obj.hour, minute=time_obj.minute, second=0, microsecond=0, tzinfo=paris_tz
+            )
+        except ValueError:
+            await ctx.send("Erreur : format de date invalide. Utilise YYYY-MM-DD, ex: `2025-05-05`.")
+            return
+    else:
+        # Set start_time to today at the specified hour/minute
+        start_dt = now.replace(hour=time_obj.hour, minute=time_obj.minute, second=0, microsecond=0)
+        # If time is in the past, assume it's for the next day
+        if start_dt < now:
+            start_dt += timedelta(days=1)
 
     # Set end_time to 2 hours later
     end_dt = start_dt + timedelta(hours=2)
@@ -150,7 +173,7 @@ async def reserve(ctx, start_time: str = None):
     start_time_iso = start_dt.isoformat()
     end_time_iso = end_dt.isoformat()
 
-    await ctx.send(f"Recherche de serveurs disponibles pour {start_dt.strftime('%Y-%m-%d %H:%M')} à {end_dt.strftime('%H:%M')} (Paris)...")
+    await ctx.send(f"Recherche de serveurs disponibles pour {start_dt.strftime('%Y-%m-%d %H:%M')} à {end_dt.strftime('%H:%M')} ...")
     data = await find_servers(start_time_iso, end_time_iso)
 
     servers = data.get("servers", [])
@@ -214,43 +237,22 @@ async def reserve(ctx, start_time: str = None):
 
     await ctx.send("Utilise `!confirm <server_id> <password>` pour réserver.\n*Note : utilise `!showmore` pour voir la liste complète des serveurs.*")
 
-@bot.command(name="showmore")
-async def showmore(ctx):
-    """
-    Affiche la liste complète des serveurs disponibles après une réservation.
-    Exemple : !showmore
-    """
-    data = user_data.get(ctx.author.id)
-    if not data or "available_servers" not in data:
-        await ctx.send("Aucune réservation en attente. Utilise `!reserve` d'abord.")
-        return
-
-    servers = data["available_servers"]
-    if not servers:
-        await ctx.send("Aucun serveur disponible.")
-        return
-
-    # Build server list and split if too long
-    messages = []
-    current_msg = "**Liste complète des serveurs disponibles :**\n"
-    char_limit = 1900  # Leave buffer below 2000 chars
-    for s in servers:
-        location = s.get('location', {}).get('name', 'Inconnu')
-        if 'Inconnu' in location:
-            location = ''
-        server_line = f"`{s['id']}`: {clean_server_name(s['name'])} ({location})\n"
-        if len(current_msg) + len(server_line) > char_limit:
-            messages.append(current_msg)
-            current_msg = "**Liste complète des serveurs (suite) :**\n"
-        current_msg += server_line
-
-    # Append the last message if it has content
-    if current_msg.strip() != "**Liste complète des serveurs (suite) :**":
-        messages.append(current_msg)
-
-    # Send all messages
-    for msg in messages:
-        await ctx.send(msg)
+async def notify_server_open(ctx, server_name, ip_and_port, password, start_dt):
+    """Send a notification when the server is open."""
+    paris_tz = pytz.timezone("Europe/Paris")
+    now = datetime.now(paris_tz)
+    seconds_until_start = (start_dt - now).total_seconds()
+    
+    if seconds_until_start > 0:
+        await asyncio.sleep(seconds_until_start)
+    
+    notification = (
+        f"🔔 **Le serveur est maintenant ouvert !**\n"
+        f"Serveur : **{clean_server_name(server_name)}**\n"
+        f"**Connect info :**\n"
+        f"```\nconnect {ip_and_port}; password \"{password}\"\n```\n"
+    )
+    await ctx.send(notification)
 
 @bot.command(name="confirm")
 async def confirm(ctx, server_id: int, password: str, rcon: str = None):
@@ -295,8 +297,11 @@ async def confirm(ctx, server_id: int, password: str, rcon: str = None):
     )
     if status == 200:
         res = reservation["reservation"]
+        # Convertir l'heure de début ISO en objet datetime
+        start_dt = datetime.fromisoformat(data["start"]).astimezone(pytz.timezone("Europe/Paris"))
         public_info = (
             f"✅ Réservation confirmée sur **{clean_server_name(res['server']['name'])}**\n"
+            f"**Date et heure d'ouverture :** {start_dt.strftime('%Y-%m-%d %H:%M')} (Paris)\n"
             f"**Connect info :**\n"
             f"```\nconnect {res['server']['ip_and_port']}; password \"{res['password']}\"\n```\n"
             f"RCON details sent via private message."
@@ -312,6 +317,10 @@ async def confirm(ctx, server_id: int, password: str, rcon: str = None):
             await ctx.send("❌ Impossible d'envoyer les détails RCON en message privé. Vérifie que tes DMs sont ouverts pour le bot.")
         user_data[ctx.author.id]["reservation_id"] = res["id"]
         user_data[ctx.author.id]["rcon"] = rcon  # Store RCON for potential future use
+        # Lancer la tâche de notification en arrière-plan
+        bot.loop.create_task(notify_server_open(
+            ctx, res['server']['name'], res['server']['ip_and_port'], res['password'], start_dt
+        ))
     else:
         await ctx.send("❌ Erreur lors de la création de la réservation.")
         await ctx.send(str(reservation.get("reservation", {}).get("errors", {})))
