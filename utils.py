@@ -39,8 +39,11 @@ async def create_reservation(start, end, server_id, password, rcon, server_confi
             "server_id": server_id,
             "password": password,
             "rcon": rcon,
-            "first_map": "cp_process_f12",  # Définir la carte par défaut
-            "server_config_id": server_config_id  # Ajouter l'ID de la config
+            "first_map": "cp_process_f12",
+            "server_config_id": server_config_id,
+            "auto_end": True,
+            "enable_plugins": True,
+            "enable_demos_tf": True
         }
     }
     async with aiohttp.ClientSession() as session:
