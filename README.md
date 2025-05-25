@@ -19,7 +19,6 @@ The bot operates in the Europe/Paris timezone and supports one active reservatio
 - **Discord Bot Token**: Obtain from the [Discord Developer Portal](https://discord.com/developers/applications).
 - **ServeMe API Key**: Obtain from [serveme.tf](https://serveme.tf/) (requires a premium account or free trial).
 - **Dependencies**: Python libraries listed in `requirements.txt`.
-- **RCON Access**: Credentials for TF2 server control (default RCON password configurable).
 
 ## Installation
 
